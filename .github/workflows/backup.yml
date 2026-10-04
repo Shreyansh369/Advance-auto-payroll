@@ -1,0 +1,38 @@
+name: Database backup
+
+# Nightly encrypted copy of the production database, kept for 90 days as a workflow artifact.
+# Required repository secrets:
+#   BACKUP_DATABASE_URL  Neon *direct* (non-pooled) connection string
+#   BACKUP_PASSPHRASE    long random passphrase; store it somewhere safe outside GitHub
+# Restore: gpg --decrypt backup.sql.gz.gpg | gunzip | psql "$TARGET_DATABASE_URL"
+
+on:
+  schedule:
+    - cron: "17 6 * * *" # 02:17 BVI time
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump and encrypt
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DATABASE_URL" ] || [ -z "$PASSPHRASE" ]; then
+            echo "Backup secrets are not configured." >&2
+            exit 1
+          fi
+          stamp=$(date -u +%Y-%m-%dT%H%M)
+          # Use the client matching Neon's Postgres major version (17).
+          docker run --rm -e DATABASE_URL postgres:17 sh -c 'pg_dump --no-owner --no-privileges "$DATABASE_URL"' \
+            | gzip -9 \
+            | gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$PASSPHRASE" -o "payroll-$stamp.sql.gz.gpg"
+          ls -lh payroll-*.gpg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: payroll-backup-${{ github.run_id }}
+          path: payroll-*.sql.gz.gpg
+          retention-days: 90

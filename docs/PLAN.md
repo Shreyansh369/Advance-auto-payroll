@@ -3,39 +3,42 @@
 Private, single-owner, multi-company payroll system for the British Virgin Islands (BVI).
 Not commercial / not multi-tenant SaaS. Company name and logo to be supplied later.
 
-Status: **planning – no code written yet.** Items marked ❓ need a decision or confirmation
+Status: **Phase 1 complete** (auth + 2FA, companies, switcher, roles, users, audit log). Items marked ❓ need a decision or confirmation
 before (or during) the phase that depends on them.
 
 ---
 
-## 1. Recommended technology
+## 1. Technology (zero-cost)
 
-| Concern | Choice | Why |
+| Concern | Choice | Notes |
 |---|---|---|
-| Language / framework | Python 3.12 + Django 5 | Mature auth, permissions, forms, admin, migrations; very little custom security plumbing |
-| Database | PostgreSQL 16 | Exact `NUMERIC` money math, transactions, row-level security as a second isolation layer |
-| UI | Server-rendered Django templates + HTMX + Tailwind | Fast, simple, no separate SPA to secure; works well for data-entry grids |
-| Money math | Python `Decimal` everywhere, never floats; explicit rounding rules | Payroll must reconcile to the cent |
-| PDFs | WeasyPrint (HTML → PDF) | Branded payslips/reports from templates; logo dropped in later |
-| Excel / CSV | openpyxl / csv | Report exports, QuickBooks import files |
-| 2FA | django-otp (TOTP authenticator app) | Required for a system holding salaries and ID numbers |
-| Audit history | django-simple-history + custom append-only audit log | Field-level "who changed what, when, old → new" |
-| Background jobs | Django-Q or Celery (light) | Bulk payslip generation / ZIP downloads |
-| Tests | pytest + "golden" worked payroll examples | Every statutory/rate formula locked by tests |
-| Deployment | Docker Compose on a private VPS, Caddy for automatic HTTPS | One small server, cheap, easy to back up |
-| Backups | Nightly encrypted `pg_dump` + file storage to off-site bucket, restore tested | Payroll records must survive server loss |
+| App | Next.js 16 (React + TypeScript) + Tailwind | Responsive on phone, tablet and desktop; can be installed to a phone's home screen |
+| Database | PostgreSQL on **Neon free tier** | 0.5 GB; sleeps after 5 min idle; 6-hour point-in-time restore |
+| ORM / migrations | Drizzle | SQL migrations in `drizzle/` |
+| Auth | Better Auth (email + password, mandatory TOTP 2FA) | Open source, no per-user cost |
+| Money math | `decimal.js` + Postgres `NUMERIC` | Never floating point |
+| PDFs | `@react-pdf/renderer`; bulk ZIP built in the browser | Avoids serverless time limits |
+| Excel / CSV | ExcelJS | |
+| Hosting | **Netlify free** | Vercel Hobby is non-commercial only, and this is paid client work |
+| Backups | GitHub Actions nightly `pg_dump`, AES-256 encrypted, kept 90 days | Restore tested |
+| CI | GitHub Actions: lint, typecheck, tests, build | |
+| Domain | Free `*.netlify.app` | Custom domain optional (~$10–15/yr) |
 
-❓ Confirm stack and hosting (private VPS vs. local office machine vs. cloud PaaS).
-
----
+### If the owner wants a native app later
+- First offer the installable web app (home-screen icon, full screen), which costs nothing.
+- If a store app is required: build an **Expo (React Native)** app that reuses the same
+  TypeScript payroll/leave calculation modules and talks to this app through API routes.
+  Keep calculation logic in pure modules (no Next.js imports) so this stays possible.
+- Store fees are the owner's cost: Apple $99/year, Google Play $25 one-time.
+- Quote it as a separate phase.
 
 ## 2. Architecture & data separation
 
 - One database; **every business record carries `company_id`**.
 - A request-level "active company" (company switcher in the top bar). All queries go through
   company-scoped managers; any record from another company returns 404.
-- PostgreSQL row-level security as defence-in-depth, plus automated tests that try to read
-  across companies.
+- Automated tests (unit, database and browser) check that one company's data can't be read
+  from another. PostgreSQL row-level security can be added later as a second layer.
 - Users have a **membership per company with a role**, so access can differ per company.
 
 ### Roles (per company)
@@ -176,10 +179,11 @@ Class 1 = 7 or fewer employees, annual payroll ≤ $150,000 and turnover ≤ $30
 
 ## 9. Security
 
-- HTTPS only, strong passwords, mandatory TOTP 2FA, session timeout, login throttling.
-- Encryption of sensitive fields (bank accounts, ID numbers) at rest.
-- Per-company role permissions; append-only audit log incl. logins and exports.
-- Encrypted off-site backups, tested restores; minimal open ports; automatic OS updates.
+- HTTPS only, 12+ character passwords, mandatory TOTP 2FA, 12-hour sessions, login throttling.
+- No public sign-up; administrator-created accounts with forced password change.
+- Encryption of sensitive fields (bank accounts, ID numbers) at rest (Phase 2).
+- Per-company role permissions; database-enforced append-only audit log incl. logins.
+- Encrypted nightly backups with a tested restore.
 
 ---
 
@@ -188,7 +192,7 @@ Class 1 = 7 or fewer employees, annual payroll ≤ $150,000 and turnover ≤ $30
 | Phase | Scope |
 |---|---|
 | 0 | Confirm decisions & BVI rules (this document) |
-| 1 | Project setup, auth + 2FA, companies, company switcher, roles, audit log, branding hooks |
+| 1 ✅ | Project setup, auth + 2FA, companies, company switcher, roles, audit log, branding hooks |
 | 2 | Employees, effective-dated pay & schedule, rate calculator, pay schedules/calendars, holidays |
 | 3 | Statutory engine (effective-dated tables) + golden tests |
 | 4 | Leave types, policies, ledger, balances, unpaid → payroll link |
